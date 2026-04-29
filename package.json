@@ -1,0 +1,17 @@
+{
+  "name": "realtime-chat-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Real-time chat application with React, Express, Socket.io, and MongoDB.",
+  "scripts": {
+    "install:all": "npm.cmd --prefix server install && npm.cmd --prefix client install",
+    "dev": "concurrently \"npm.cmd --prefix server run dev\" \"npm.cmd --prefix client run dev\"",
+    "server": "npm.cmd --prefix server run dev",
+    "client": "npm.cmd --prefix client run dev",
+    "build": "npm.cmd --prefix client run build",
+    "start": "npm.cmd --prefix server start"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
