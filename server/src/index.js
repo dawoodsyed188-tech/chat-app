@@ -102,7 +102,7 @@ io.use(async (socket, next) => {
   }
 });
 
-io.on('connection', async (socket) => {
+io.on("connection", (socket) => {
   const authenticatedUser = socket.user;
   console.log(`Client connected: ${socket.id} (${authenticatedUser.email})`);
 
@@ -239,6 +239,54 @@ io.on('connection', async (socket) => {
     } catch (error) {
       console.error(error);
       callback?.({ ok: false, error: 'Message could not be sent.' });
+    }
+  });
+
+  socket.on('chat:typing', (payload) => {
+    const user = onlineUsers.get(socket.id);
+    if (!user) return;
+
+    const context = payload?.context === 'direct' ? 'direct' : 'room';
+    const roomId = String(payload?.roomId || user.roomId || DEFAULT_ROOM).trim();
+    const recipientId = String(payload?.recipientId || '').trim();
+
+    const typingData = {
+      userId: authenticatedUser.id,
+      username: authenticatedUser.name,
+      context,
+      roomId,
+      recipientId
+    };
+
+    if (context === 'direct') {
+      const channel = getDirectChannel(authenticatedUser.id, recipientId);
+      socket.to(channel).emit('chat:typing', typingData);
+    } else {
+      socket.to(getRoomChannel(roomId)).emit('chat:typing', typingData);
+    }
+  });
+
+  socket.on('chat:stopTyping', (payload) => {
+    const user = onlineUsers.get(socket.id);
+    if (!user) return;
+
+    const context = payload?.context === 'direct' ? 'direct' : 'room';
+    const roomId = String(payload?.roomId || user.roomId || DEFAULT_ROOM).trim();
+    const recipientId = String(payload?.recipientId || '').trim();
+
+    const stopTypingData = {
+      userId: authenticatedUser.id,
+      username: authenticatedUser.name,
+      context,
+      roomId,
+      recipientId
+    };
+
+    if (context === 'direct') {
+      const channel = getDirectChannel(authenticatedUser.id, recipientId);
+      socket.to(channel).emit('chat:stopTyping', stopTypingData);
+    } else {
+      socket.to(getRoomChannel(roomId)).emit('chat:stopTyping', stopTypingData);
     }
   });
 

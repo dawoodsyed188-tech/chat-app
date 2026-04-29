@@ -56,8 +56,10 @@ export default function App() {
   const [socketId, setSocketId] = useState(socket.id);
   const [connected, setConnected] = useState(socket.connected);
   const [error, setError] = useState('');
+  const [typingUsers, setTypingUsers] = useState([]);
   const messagesEndRef = useRef(null);
   const activeChatRef = useRef(activeChat);
+  const typingTimeoutRef = useRef(null);
 
   const trimmedDraft = draft.trim();
   const currentUser = auth.user;
@@ -67,6 +69,14 @@ export default function App() {
     activeChat.type === 'direct'
       ? 'Private message'
       : `${onlineUsers.filter((user) => user.roomId === activeChat.id).length} in this room`;
+
+  const currentTypingUsers = typingUsers.filter((t) => {
+    if (activeChat.type === 'room') {
+      return t.context === 'room' && t.roomId === activeChat.id;
+    } else {
+      return t.context === 'direct' && t.recipientId === activeChat.id;
+    }
+  });
 
   const status = useMemo(() => (connected ? 'Live' : 'Connecting'), [connected]);
 
@@ -169,6 +179,36 @@ export default function App() {
       }
     }
 
+    function handleTyping(data) {
+      setTypingUsers((current) => {
+        const existing = current.find(
+          (t) =>
+            t.userId === data.userId &&
+            t.context === data.context &&
+            t.roomId === data.roomId &&
+            t.recipientId === data.recipientId
+        );
+        if (!existing) {
+          return [...current, data];
+        }
+        return current;
+      });
+    }
+
+    function handleStopTyping(data) {
+      setTypingUsers((current) =>
+        current.filter(
+          (t) =>
+            !(
+              t.userId === data.userId &&
+              t.context === data.context &&
+              t.roomId === data.roomId &&
+              t.recipientId === data.recipientId
+            )
+        )
+      );
+    }
+
     function handleConnectError() {
       setError(`Cannot reach ${SERVER_URL}`);
     }
@@ -180,6 +220,8 @@ export default function App() {
     socket.on('rooms:update', handleRooms);
     socket.on('users:update', handleUsers);
     socket.on('presence:event', handlePresenceEvent);
+    socket.on('chat:typing', handleTyping);
+    socket.on('chat:stopTyping', handleStopTyping);
     socket.on('connect_error', handleConnectError);
     socket.auth = { token: auth.token };
     socket.connect();
@@ -192,6 +234,8 @@ export default function App() {
       socket.off('rooms:update', handleRooms);
       socket.off('users:update', handleUsers);
       socket.off('presence:event', handlePresenceEvent);
+      socket.off('chat:typing', handleTyping);
+      socket.off('chat:stopTyping', handleStopTyping);
       socket.off('connect_error', handleConnectError);
       socket.disconnect();
     };
@@ -296,6 +340,57 @@ export default function App() {
     );
 
     setDraft('');
+
+    // Stop typing when sending message
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+    socket.emit('chat:stopTyping', {
+      context: activeChat.type,
+      roomId: activeChat.type === 'room' ? activeChat.id : undefined,
+      recipientId: activeChat.type === 'direct' ? activeChat.id : undefined
+    });
+  }
+
+  function handleInputChange(event) {
+    setDraft(event.target.value);
+
+    if (!event.target.value.trim()) {
+      // Stop typing if input is empty
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+      socket.emit('chat:stopTyping', {
+        context: activeChat.type,
+        roomId: activeChat.type === 'room' ? activeChat.id : undefined,
+        recipientId: activeChat.type === 'direct' ? activeChat.id : undefined
+      });
+      return;
+    }
+
+    // Emit typing
+    socket.emit('chat:typing', {
+      context: activeChat.type,
+      roomId: activeChat.type === 'room' ? activeChat.id : undefined,
+      recipientId: activeChat.type === 'direct' ? activeChat.id : undefined
+    });
+
+    // Clear existing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    // Set new timeout to stop typing
+    typingTimeoutRef.current = setTimeout(() => {
+      socket.emit('chat:stopTyping', {
+        context: activeChat.type,
+        roomId: activeChat.type === 'room' ? activeChat.id : undefined,
+        recipientId: activeChat.type === 'direct' ? activeChat.id : undefined
+      });
+      typingTimeoutRef.current = null;
+    }, 1000);
   }
 
   if (!currentUser) {
@@ -460,6 +555,13 @@ export default function App() {
           </aside>
 
           <div className="message-list" role="log" aria-live="polite">
+            {currentTypingUsers.length > 0 ? (
+              <div className="typing-indicator">
+                {currentTypingUsers.length === 1
+                  ? `${currentTypingUsers[0].username} is typing...`
+                  : `${currentTypingUsers.length} people are typing...`}
+              </div>
+            ) : null}
             {messages.length === 0 ? (
               <div className="empty-state">
                 <MessageCircle size={34} />
@@ -537,7 +639,7 @@ export default function App() {
           <input
             value={draft}
             maxLength={1000}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={handleInputChange}
             placeholder={activeChat.type === 'direct' ? `Message ${activeTitle}` : `Message #${activeTitle}`}
             aria-label="Message"
           />
