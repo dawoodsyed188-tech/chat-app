@@ -1,9 +1,11 @@
 import 'dotenv/config';
+import fs from 'node:fs';
 import http from 'node:http';
 import cors from 'cors';
 import express from 'express';
 import { Server } from 'socket.io';
 import authRouter from './routes/auth.js';
+import uploadRouter from './routes/upload.js';
 import { connectDatabase, isDatabaseConnected } from './db.js';
 import messagesRouter from './routes/messages.js';
 import roomsRouter from './routes/rooms.js';
@@ -26,6 +28,7 @@ const USER_COLORS = [
 const onlineUsers = new Map();
 const userSockets = new Map();
 const DEFAULT_ROOM = 'general';
+const UPLOADS_DIR = 'uploads';
 
 function getRoomChannel(roomId) {
   return `room:${roomId}`;
@@ -33,6 +36,10 @@ function getRoomChannel(roomId) {
 
 function getDirectChannel(userId, recipientId) {
   return `direct:${[userId, recipientId].sort().join(':')}`;
+}
+
+function isUploadUrl(url) {
+  return /^\/uploads\/[^/]+\.(jpe?g|png|gif|webp)$/i.test(url);
 }
 
 function getAvailableColor(socketId) {
@@ -78,8 +85,12 @@ const io = new Server(server, {
   }
 });
 
+fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+app.set('trust proxy', 1);
 app.use(cors({ origin: CLIENT_ORIGIN }));
 app.use(express.json());
+app.use('/uploads', express.static('uploads'));
 
 app.get('/api/health', (req, res) => {
   res.json({
@@ -89,6 +100,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/auth', authRouter);
+app.use('/api/upload', authenticateRequest, uploadRouter);
 app.use('/api/messages', authenticateRequest, messagesRouter);
 app.use('/api/rooms', authenticateRequest, roomsRouter);
 
@@ -102,7 +114,7 @@ io.use(async (socket, next) => {
   }
 });
 
-io.on("connection", (socket) => {
+io.on('connection', async (socket) => {
   const authenticatedUser = socket.user;
   console.log(`Client connected: ${socket.id} (${authenticatedUser.email})`);
 
@@ -192,10 +204,17 @@ io.on("connection", (socket) => {
   socket.on('chat:message', async (payload, callback) => {
     try {
       const text = String(payload?.text || '').trim();
+      const imageUrl = String(payload?.imageUrl || '').trim();
+      const isImage = Boolean(payload?.isImage && imageUrl);
       const context = payload?.context === 'direct' ? 'direct' : 'room';
 
-      if (!text) {
+      if (!text && !imageUrl) {
         callback?.({ ok: false, error: 'Message is required.' });
+        return;
+      }
+
+      if (imageUrl && !isUploadUrl(imageUrl)) {
+        callback?.({ ok: false, error: 'Image URL is invalid.' });
         return;
       }
 
@@ -222,7 +241,9 @@ io.on("connection", (socket) => {
         context,
         roomId,
         recipientId,
-        recipientName: recipient?.username
+        recipientName: recipient?.username,
+        imageUrl,
+        isImage
       });
 
       if (context === 'direct') {

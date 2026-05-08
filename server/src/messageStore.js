@@ -15,6 +15,8 @@ function normalizeMessage(message) {
     roomId: message.roomId || 'general',
     recipientId: message.recipientId,
     recipientName: message.recipientName,
+    imageUrl: message.imageUrl,
+    isImage: Boolean(message.isImage || message.imageUrl),
     createdAt: message.createdAt
   };
 }
@@ -67,7 +69,18 @@ export async function getRecentMessages(options = {}, limit = 50) {
   return memoryMessages.filter((message) => matchesConversation(message, options)).slice(-limit);
 }
 
-export async function saveMessage({ username, text, userId, color, context = 'room', roomId = 'general', recipientId, recipientName }) {
+export async function saveMessage({
+  username,
+  text = '',
+  userId,
+  color,
+  context = 'room',
+  roomId = 'general',
+  recipientId,
+  recipientName,
+  imageUrl = '',
+  isImage = false
+}) {
   const payload = {
     username: username.trim().slice(0, 40),
     text: text.trim().slice(0, 1000),
@@ -76,7 +89,9 @@ export async function saveMessage({ username, text, userId, color, context = 'ro
     context,
     roomId: context === 'room' ? roomId : undefined,
     recipientId: context === 'direct' ? recipientId : undefined,
-    recipientName: context === 'direct' ? recipientName : undefined
+    recipientName: context === 'direct' ? recipientName : undefined,
+    imageUrl: imageUrl.trim(),
+    isImage: Boolean(isImage && imageUrl)
   };
 
   if (isDatabaseConnected()) {

@@ -1,6 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Gamepad2, GraduationCap, Hash, LogOut, MessageCircle, Moon, Send, Sun, Users, Wifi, WifiOff } from 'lucide-react';
+import { Gamepad2, GraduationCap, Hash, Image, LogOut, MessageCircle, Moon, Send, Sun, Users, Wifi, WifiOff } from 'lucide-react';
 import { socket, SERVER_URL } from './socket.js';
+
+function toAbsoluteUrl(url) {
+  if (!url) {
+    return '';
+  }
+
+  return url.startsWith('http') ? url : `${SERVER_URL}${url}`;
+}
 
 function formatTime(value) {
   return new Intl.DateTimeFormat(undefined, {
@@ -57,9 +65,11 @@ export default function App() {
   const [connected, setConnected] = useState(socket.connected);
   const [error, setError] = useState('');
   const [typingUsers, setTypingUsers] = useState([]);
+  const [uploading, setUploading] = useState(false);
   const messagesEndRef = useRef(null);
   const activeChatRef = useRef(activeChat);
   const typingTimeoutRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const trimmedDraft = draft.trim();
   const currentUser = auth.user;
@@ -393,6 +403,57 @@ export default function App() {
     }, 1000);
   }
 
+  async function handleImageUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file || !currentUser) {
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const response = await fetch(`${SERVER_URL}/api/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${auth.token}` },
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error('Upload failed');
+      }
+
+      const data = await response.json();
+      const imageUrl = data.url;
+
+      socket.emit(
+        'chat:message',
+        {
+          text: '',
+          imageUrl,
+          context: activeChat.type,
+          roomId: activeChat.type === 'room' ? activeChat.id : undefined,
+          recipientId: activeChat.type === 'direct' ? activeChat.id : undefined,
+          isImage: true
+        },
+        (response) => {
+          if (!response?.ok) {
+            setError(response?.error || 'Image could not be sent.');
+          }
+        }
+      );
+
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } catch (error) {
+      setError(error.message || 'Image upload failed.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
   if (!currentUser) {
     return (
       <main className={darkMode ? 'app-shell dark' : 'app-shell'}>
@@ -594,7 +655,16 @@ export default function App() {
                         <strong>{mine ? 'You' : message.username}</strong>
                         <time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time>
                       </div>
-                      <p>{message.text}</p>
+                      {message.isImage || message.imageUrl ? (
+                        <img
+                          src={toAbsoluteUrl(message.imageUrl || message.text)}
+                          alt="Shared image"
+                          className="message-image"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <p>{message.text}</p>
+                      )}
                     </div>
                     {mine ? (
                       <div className="avatar mine" style={{ background: avatarColor }}>
@@ -642,6 +712,23 @@ export default function App() {
             onChange={handleInputChange}
             placeholder={activeChat.type === 'direct' ? `Message ${activeTitle}` : `Message #${activeTitle}`}
             aria-label="Message"
+          />
+          <button
+            type="button"
+            disabled={uploading || !connected}
+            onClick={() => fileInputRef.current?.click()}
+            aria-label="Upload image"
+            title="Upload image"
+          >
+            <Image size={20} />
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleImageUpload}
+            style={{ display: 'none' }}
+            aria-hidden="true"
           />
           <button type="submit" disabled={!trimmedDraft || !connected} aria-label="Send message">
             <Send size={20} />

@@ -690,9 +690,18 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.message-image {
+  width: min(300px, 100%);
+  max-height: 320px;
+  height: auto;
+  object-fit: contain;
+  border-radius: 8px;
+  display: block;
+}
+
 .composer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 48px;
+  grid-template-columns: minmax(0, 1fr) 48px 48px;
   gap: 12px;
   padding: 16px 20px 20px;
   border-top: 1px solid var(--panel-border);
@@ -718,6 +727,10 @@ h1 {
     background 160ms ease,
     transform 160ms ease,
     opacity 160ms ease;
+}
+
+.composer button:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .composer button:hover:not(:disabled) {

@@ -10,9 +10,9 @@ const messageSchema = new mongoose.Schema(
     },
     text: {
       type: String,
-      required: true,
       trim: true,
-      maxlength: 1000
+      maxlength: 1000,
+      default: ''
     },
     userId: {
       type: String,
@@ -43,6 +43,14 @@ const messageSchema = new mongoose.Schema(
       type: String,
       trim: true,
       maxlength: 40
+    },
+    isImage: {
+      type: Boolean,
+      default: false
+    },
+    imageUrl: {
+      type: String,
+      trim: true
     }
   },
   {
