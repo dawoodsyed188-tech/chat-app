@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Camera, Gamepad2, GraduationCap, Hash, Image, LogOut, MessageCircle, Moon, Send, Sun, Users, Wifi, WifiOff } from 'lucide-react';
+import { Camera, Gamepad2, GraduationCap, Hash, Image, LogOut, MessageCircle, Moon, Send, Settings, Sun, Users, Wifi, WifiOff, X } from 'lucide-react';
 import { socket, SERVER_URL } from './socket.js';
 
 function toAbsoluteUrl(url) {
@@ -82,11 +82,18 @@ export default function App() {
   const [error, setError] = useState('');
   const [typingUsers, setTypingUsers] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileForm, setProfileForm] = useState({ name: '' });
+  const [profileFile, setProfileFile] = useState(null);
+  const [profilePreview, setProfilePreview] = useState('');
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState('');
   const messagesEndRef = useRef(null);
   const activeChatRef = useRef(activeChat);
   const typingTimeoutRef = useRef(null);
   const fileInputRef = useRef(null);
   const authProfileInputRef = useRef(null);
+  const profileInputRef = useRef(null);
 
   const trimmedDraft = draft.trim();
   const currentUser = auth.user;
@@ -122,6 +129,29 @@ export default function App() {
 
     return () => URL.revokeObjectURL(previewUrl);
   }, [authProfileFile]);
+
+  useEffect(() => {
+    if (!profileOpen || !currentUser) {
+      return;
+    }
+
+    setProfileForm({ name: currentUser.name || '' });
+    setProfileFile(null);
+    setProfilePreview('');
+    setProfileError('');
+  }, [profileOpen, currentUser]);
+
+  useEffect(() => {
+    if (!profileFile) {
+      setProfilePreview('');
+      return undefined;
+    }
+
+    const previewUrl = URL.createObjectURL(profileFile);
+    setProfilePreview(previewUrl);
+
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [profileFile]);
 
   useEffect(() => {
     async function loadSession() {
@@ -212,6 +242,14 @@ export default function App() {
       setOnlineUsers(users);
     }
 
+    function handleProfileUpdate(user) {
+      applyProfileUpdate({
+        id: user.id,
+        name: user.name || user.username,
+        profileImageUrl: user.profileImageUrl || ''
+      });
+    }
+
     function handlePresenceEvent(event) {
       if (activeChatRef.current.type === 'room') {
         setMessages((current) => [...current, { ...event, type: 'system' }]);
@@ -258,6 +296,7 @@ export default function App() {
     socket.on('chat:message', handleMessage);
     socket.on('rooms:update', handleRooms);
     socket.on('users:update', handleUsers);
+    socket.on('profile:update', handleProfileUpdate);
     socket.on('presence:event', handlePresenceEvent);
     socket.on('chat:typing', handleTyping);
     socket.on('chat:stopTyping', handleStopTyping);
@@ -272,6 +311,7 @@ export default function App() {
       socket.off('chat:message', handleMessage);
       socket.off('rooms:update', handleRooms);
       socket.off('users:update', handleUsers);
+      socket.off('profile:update', handleProfileUpdate);
       socket.off('presence:event', handlePresenceEvent);
       socket.off('chat:typing', handleTyping);
       socket.off('chat:stopTyping', handleStopTyping);
@@ -342,6 +382,93 @@ export default function App() {
     setOnlineUsers([]);
     setSocketId(undefined);
     setConnected(false);
+  }
+
+  function applyProfileUpdate(user) {
+    if (!user?.id) {
+      return;
+    }
+
+    setAuth((current) => {
+      if (current.user?.id !== user.id) {
+        return current;
+      }
+
+      const nextUser = {
+        ...current.user,
+        name: user.name || current.user.name,
+        profileImageUrl: user.profileImageUrl ?? current.user.profileImageUrl
+      };
+      localStorage.setItem('chat:user', JSON.stringify(nextUser));
+      return { ...current, user: nextUser };
+    });
+
+    setOnlineUsers((current) =>
+      current.map((onlineUser) =>
+        onlineUser.id === user.id
+          ? {
+              ...onlineUser,
+              username: user.name || onlineUser.username,
+              profileImageUrl: user.profileImageUrl ?? onlineUser.profileImageUrl
+            }
+          : onlineUser
+      )
+    );
+
+    setMessages((current) =>
+      current.map((message) =>
+        message.userId === user.id
+          ? {
+              ...message,
+              username: user.name || message.username,
+              profileImageUrl: user.profileImageUrl ?? message.profileImageUrl
+            }
+          : message
+      )
+    );
+
+    setActiveChat((current) =>
+      current.type === 'direct' && current.id === user.id ? { ...current, name: user.name || current.name } : current
+    );
+  }
+
+  async function handleProfileSubmit(event) {
+    event.preventDefault();
+
+    if (!currentUser) {
+      return;
+    }
+
+    setProfileSaving(true);
+    setProfileError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('name', profileForm.name);
+      if (profileFile) {
+        formData.append('profileImage', profileFile);
+      }
+
+      const response = await fetch(`${SERVER_URL}/api/profile`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${auth.token}` },
+        body: formData
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Profile could not be updated.');
+      }
+
+      applyProfileUpdate(data.user);
+      socket.emit('user:updateProfile');
+      setProfileOpen(false);
+      setProfileFile(null);
+    } catch (error) {
+      setProfileError(error.message);
+    } finally {
+      setProfileSaving(false);
+    }
   }
 
   function handleRoomSelect(room) {
@@ -622,13 +749,79 @@ export default function App() {
               <span>{currentUser.email}</span>
             </div>
           </div>
-          <button className="logout-button" type="button" onClick={handleLogout}>
-            <LogOut size={17} />
-            <span>Logout</span>
-          </button>
+          <div className="profile-actions">
+            <button className="profile-edit-button" type="button" onClick={() => setProfileOpen(true)} aria-label="Edit profile">
+              <Settings size={18} />
+              <span>Edit profile</span>
+            </button>
+            <button className="logout-button" type="button" onClick={handleLogout}>
+              <LogOut size={17} />
+              <span>Logout</span>
+            </button>
+          </div>
         </div>
 
         {error ? <div className="error-banner">{error}</div> : null}
+
+        {profileOpen ? (
+          <div className="modal-backdrop" role="presentation">
+            <section className="profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-title">
+              <header className="modal-header">
+                <div>
+                  <h2 id="profile-title">Edit profile</h2>
+                  <p>Update your display name and avatar.</p>
+                </div>
+                <button className="icon-button" type="button" onClick={() => setProfileOpen(false)} aria-label="Close profile settings">
+                  <X size={18} />
+                </button>
+              </header>
+
+              <form className="profile-form" onSubmit={handleProfileSubmit}>
+                <button className="profile-photo-button" type="button" onClick={() => profileInputRef.current?.click()}>
+                  <Avatar
+                    name={profileForm.name || currentUser.name}
+                    imageUrl={profilePreview || currentUser.profileImageUrl}
+                    color={colorForName(currentUser.email)}
+                    size="profile"
+                  />
+                  <span>
+                    <Camera size={17} />
+                    Change picture
+                  </span>
+                </button>
+                <input
+                  ref={profileInputRef}
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  onChange={(event) => setProfileFile(event.target.files?.[0] || null)}
+                />
+
+                <label>
+                  <span>Display name</span>
+                  <input
+                    value={profileForm.name}
+                    maxLength={40}
+                    onChange={(event) => setProfileForm({ name: event.target.value })}
+                    placeholder="Your display name"
+                    required
+                  />
+                </label>
+
+                {profileError ? <div className="error-banner compact">{profileError}</div> : null}
+
+                <div className="modal-actions">
+                  <button className="secondary-button" type="button" onClick={() => setProfileOpen(false)} disabled={profileSaving}>
+                    Cancel
+                  </button>
+                  <button className="primary-button" type="submit" disabled={profileSaving || !profileForm.name.trim()}>
+                    {profileSaving ? 'Saving...' : 'Save changes'}
+                  </button>
+                </div>
+              </form>
+            </section>
+          </div>
+        ) : null}
 
         <div className="chat-body">
           <aside className="room-panel" aria-label="Rooms and direct messages">

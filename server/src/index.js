@@ -5,6 +5,7 @@ import cors from 'cors';
 import express from 'express';
 import { Server } from 'socket.io';
 import authRouter from './routes/auth.js';
+import profileRouter from './routes/profile.js';
 import uploadRouter from './routes/upload.js';
 import { connectDatabase, isDatabaseConnected } from './db.js';
 import messagesRouter from './routes/messages.js';
@@ -103,6 +104,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/auth', authRouter);
+app.use('/api/profile', authenticateRequest, profileRouter);
 app.use('/api/upload', authenticateRequest, uploadRouter);
 app.use('/api/messages', authenticateRequest, messagesRouter);
 app.use('/api/rooms', authenticateRequest, roomsRouter);
@@ -148,6 +150,37 @@ io.on('connection', async (socket) => {
     socket.join(getRoomChannel(DEFAULT_ROOM));
     emitSystemEvent('join', authenticatedUser.name);
     broadcastUsers();
+  });
+
+  socket.on('user:updateProfile', async (payload, callback) => {
+    try {
+      const refreshedUser = await verifyToken(socket.handshake.auth?.token);
+      socket.user = refreshedUser;
+      Object.assign(authenticatedUser, refreshedUser);
+
+      for (const [socketId, user] of onlineUsers.entries()) {
+        if (user.id === refreshedUser.id) {
+          onlineUsers.set(socketId, {
+            ...user,
+            username: refreshedUser.name,
+            email: refreshedUser.email,
+            profileImageUrl: refreshedUser.profileImageUrl
+          });
+        }
+      }
+
+      broadcastUsers();
+      io.emit('profile:update', {
+        id: refreshedUser.id,
+        username: refreshedUser.name,
+        name: refreshedUser.name,
+        profileImageUrl: refreshedUser.profileImageUrl || ''
+      });
+      callback?.({ ok: true });
+    } catch (error) {
+      console.error(error);
+      callback?.({ ok: false, error: 'Profile could not be refreshed.' });
+    }
   });
 
   socket.on('chat:joinRoom', async (payload, callback) => {
