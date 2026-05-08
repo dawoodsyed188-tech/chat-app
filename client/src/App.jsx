@@ -46,6 +46,18 @@ function getRoomIcon(roomId) {
   return <Hash size={17} />;
 }
 
+function getStatusIcon(status) {
+  if (status === 'seen') {
+    return '✓✓';
+  }
+
+  if (status === 'delivered') {
+    return '✓✓';
+  }
+
+  return '✓';
+}
+
 function Avatar({ name, imageUrl, color, size = '' }) {
   const className = ['avatar', size].filter(Boolean).join(' ');
 
@@ -186,6 +198,18 @@ export default function App() {
   }, [activeChat]);
 
   useEffect(() => {
+    if (!auth.token || !auth.user || !connected) {
+      return;
+    }
+
+    socket.emit('chat:markSeen', {
+      context: activeChat.type,
+      roomId: activeChat.type === 'room' ? activeChat.id : undefined,
+      recipientId: activeChat.type === 'direct' ? activeChat.id : undefined
+    });
+  }, [activeChat, auth.token, auth.user, connected]);
+
+  useEffect(() => {
     if (!auth.token || !auth.user) {
       socket.disconnect();
       return undefined;
@@ -218,6 +242,23 @@ export default function App() {
 
       if (isActiveRoom || isActiveDirect) {
         setMessages((current) => [...current, message]);
+
+        if (message.userId !== auth.user.id) {
+          socket.emit('chat:message:delivered', {
+            messageId: message.id,
+            context: message.context,
+            roomId: message.roomId,
+            recipientId: message.recipientId
+          });
+
+          socket.emit('chat:message:seen', {
+            messageId: message.id,
+            context: message.context,
+            roomId: message.roomId,
+            recipientId: message.recipientId
+          });
+        }
+
         return;
       }
 
@@ -286,6 +327,18 @@ export default function App() {
       );
     }
 
+    function handleStatusUpdate(data) {
+      if (!data?.messageId || !data?.status) {
+        return;
+      }
+
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === data.messageId ? { ...message, status: data.status } : message
+        )
+      );
+    }
+
     function handleConnectError() {
       setError(`Cannot reach ${SERVER_URL}`);
     }
@@ -294,6 +347,7 @@ export default function App() {
     socket.on('disconnect', handleDisconnect);
     socket.on('chat:history', handleHistory);
     socket.on('chat:message', handleMessage);
+    socket.on('chat:message:status', handleStatusUpdate);
     socket.on('rooms:update', handleRooms);
     socket.on('users:update', handleUsers);
     socket.on('profile:update', handleProfileUpdate);
@@ -309,6 +363,7 @@ export default function App() {
       socket.off('disconnect', handleDisconnect);
       socket.off('chat:history', handleHistory);
       socket.off('chat:message', handleMessage);
+      socket.off('chat:message:status', handleStatusUpdate);
       socket.off('rooms:update', handleRooms);
       socket.off('users:update', handleUsers);
       socket.off('profile:update', handleProfileUpdate);
@@ -897,7 +952,14 @@ export default function App() {
                     <div className={mine ? 'message-bubble mine' : 'message-bubble'}>
                       <div className="message-meta">
                         <strong>{mine ? 'You' : message.username}</strong>
-                        <time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time>
+                        <div className="message-meta-right">
+                          <time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time>
+                          {mine ? (
+                            <span className={`message-status ${message.status || 'sent'}`}>
+                              {getStatusIcon(message.status)}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                       {message.isImage || message.imageUrl ? (
                         <img

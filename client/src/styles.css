@@ -953,6 +953,36 @@ h1 {
   font-size: 0.78rem;
 }
 
+.message-meta-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.message-status {
+  display: inline-flex;
+  min-width: 26px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--muted);
+  background: rgba(15, 143, 131, 0.12);
+}
+
+.message-status.delivered {
+  color: var(--accent-strong);
+  background: rgba(69, 209, 192, 0.18);
+}
+
+.message-status.seen {
+  color: #2f7ab8;
+  background: rgba(49, 103, 224, 0.14);
+}
+
 .message-meta strong,
 .message-meta time {
   overflow-wrap: anywhere;

@@ -55,6 +55,12 @@ const messageSchema = new mongoose.Schema(
     imageUrl: {
       type: String,
       trim: true
+    },
+    status: {
+      type: String,
+      enum: ['sent', 'delivered', 'seen'],
+      default: 'sent',
+      index: true
     }
   },
   {

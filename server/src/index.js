@@ -10,7 +10,7 @@ import uploadRouter from './routes/upload.js';
 import { connectDatabase, isDatabaseConnected } from './db.js';
 import messagesRouter from './routes/messages.js';
 import roomsRouter from './routes/rooms.js';
-import { getRecentMessages, saveMessage } from './messageStore.js';
+import { getRecentMessages, saveMessage, updateMessageStatus, updateConversationStatus } from './messageStore.js';
 import { ensureDefaultRooms, getRooms, roomExists } from './roomStore.js';
 import { authenticateRequest, verifyToken } from './auth.js';
 
@@ -298,6 +298,98 @@ io.on('connection', async (socket) => {
     } catch (error) {
       console.error(error);
       callback?.({ ok: false, error: 'Message could not be sent.' });
+    }
+  });
+
+  socket.on('chat:message:delivered', async (payload) => {
+    try {
+      const messageId = String(payload?.messageId || '').trim();
+      if (!messageId) {
+        return;
+      }
+
+      const message = await updateMessageStatus(messageId, 'delivered');
+      if (!message) {
+        return;
+      }
+
+      const channel = message.context === 'direct'
+        ? getDirectChannel(message.userId, message.recipientId)
+        : getRoomChannel(message.roomId || DEFAULT_ROOM);
+
+      io.to(channel).emit('chat:message:status', {
+        messageId: message.id,
+        status: message.status,
+        context: message.context,
+        roomId: message.roomId,
+        recipientId: message.recipientId
+      });
+    } catch (error) {
+      console.error('Failed to update delivered status:', error);
+    }
+  });
+
+  socket.on('chat:message:seen', async (payload) => {
+    try {
+      const messageId = String(payload?.messageId || '').trim();
+      if (!messageId) {
+        return;
+      }
+
+      const message = await updateMessageStatus(messageId, 'seen');
+      if (!message) {
+        return;
+      }
+
+      const channel = message.context === 'direct'
+        ? getDirectChannel(message.userId, message.recipientId)
+        : getRoomChannel(message.roomId || DEFAULT_ROOM);
+
+      io.to(channel).emit('chat:message:status', {
+        messageId: message.id,
+        status: message.status,
+        context: message.context,
+        roomId: message.roomId,
+        recipientId: message.recipientId
+      });
+    } catch (error) {
+      console.error('Failed to update seen status:', error);
+    }
+  });
+
+  socket.on('chat:markSeen', async (payload) => {
+    try {
+      const context = payload?.context === 'direct' ? 'direct' : 'room';
+      const roomId = String(payload?.roomId || DEFAULT_ROOM).trim();
+      const recipientId = String(payload?.recipientId || '').trim();
+      const userId = authenticatedUser.id;
+
+      const updatedMessages = await updateConversationStatus({
+        context,
+        roomId,
+        userId,
+        recipientId
+      }, 'seen');
+
+      if (!updatedMessages.length) {
+        return;
+      }
+
+      const channel = context === 'direct'
+        ? getDirectChannel(userId, recipientId)
+        : getRoomChannel(roomId);
+
+      for (const message of updatedMessages) {
+        io.to(channel).emit('chat:message:status', {
+          messageId: message.id,
+          status: message.status,
+          context: message.context,
+          roomId: message.roomId,
+          recipientId: message.recipientId
+        });
+      }
+    } catch (error) {
+      console.error('Failed to mark conversation seen:', error);
     }
   });
 
