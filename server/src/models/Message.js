@@ -22,6 +22,10 @@ const messageSchema = new mongoose.Schema(
       type: String,
       trim: true
     },
+    profileImageUrl: {
+      type: String,
+      trim: true
+    },
     context: {
       type: String,
       enum: ['room', 'direct'],

@@ -11,6 +11,7 @@ function normalizeMessage(message) {
     text: message.text,
     userId: message.userId,
     color: message.color,
+    profileImageUrl: message.profileImageUrl || '',
     context: message.context || 'room',
     roomId: message.roomId || 'general',
     recipientId: message.recipientId,
@@ -79,13 +80,15 @@ export async function saveMessage({
   recipientId,
   recipientName,
   imageUrl = '',
-  isImage = false
+  isImage = false,
+  profileImageUrl = ''
 }) {
   const payload = {
     username: username.trim().slice(0, 40),
     text: text.trim().slice(0, 1000),
     userId,
     color,
+    profileImageUrl: profileImageUrl.trim(),
     context,
     roomId: context === 'room' ? roomId : undefined,
     recipientId: context === 'direct' ? recipientId : undefined,

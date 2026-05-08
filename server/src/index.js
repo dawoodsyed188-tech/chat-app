@@ -140,6 +140,7 @@ io.on('connection', async (socket) => {
       socketId: socket.id,
       username: authenticatedUser.name,
       email: authenticatedUser.email,
+      profileImageUrl: authenticatedUser.profileImageUrl,
       color: getAvailableColor(socket.id),
       roomId: DEFAULT_ROOM
     });
@@ -241,6 +242,7 @@ io.on('connection', async (socket) => {
         text,
         userId: authenticatedUser.id,
         color: user?.color,
+        profileImageUrl: authenticatedUser.profileImageUrl,
         context,
         roomId,
         recipientId,

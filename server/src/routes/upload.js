@@ -24,14 +24,14 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-const upload = multer({
+export const imageUpload = multer({
   storage,
   fileFilter,
   limits: { fileSize: 5 * 1024 * 1024 }
 });
 
 router.post('/', (req, res) => {
-  upload.single('image')(req, res, (error) => {
+  imageUpload.single('image')(req, res, (error) => {
     if (error) {
       const message =
         error.code === 'LIMIT_FILE_SIZE' ? 'Image must be 5MB or smaller.' : 'Only JPEG, PNG, GIF, and WebP images are allowed.';

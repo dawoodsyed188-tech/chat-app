@@ -9,7 +9,8 @@ export function createToken(user) {
     {
       sub: String(user._id),
       email: user.email,
-      name: user.name
+      name: user.name,
+      profileImageUrl: user.profileImageUrl
     },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
@@ -20,7 +21,8 @@ export function publicUser(user) {
   return {
     id: String(user._id),
     name: user.name,
-    email: user.email
+    email: user.email,
+    profileImageUrl: user.profileImageUrl || ''
   };
 }
 

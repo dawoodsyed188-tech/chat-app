@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Gamepad2, GraduationCap, Hash, Image, LogOut, MessageCircle, Moon, Send, Sun, Users, Wifi, WifiOff } from 'lucide-react';
+import { Camera, Gamepad2, GraduationCap, Hash, Image, LogOut, MessageCircle, Moon, Send, Sun, Users, Wifi, WifiOff } from 'lucide-react';
 import { socket, SERVER_URL } from './socket.js';
 
 function toAbsoluteUrl(url) {
@@ -7,7 +7,7 @@ function toAbsoluteUrl(url) {
     return '';
   }
 
-  return url.startsWith('http') ? url : `${SERVER_URL}${url}`;
+  return /^(https?:|blob:|data:)/.test(url) ? url : `${SERVER_URL}${url}`;
 }
 
 function formatTime(value) {
@@ -46,6 +46,20 @@ function getRoomIcon(roomId) {
   return <Hash size={17} />;
 }
 
+function Avatar({ name, imageUrl, color, size = '' }) {
+  const className = ['avatar', size].filter(Boolean).join(' ');
+
+  if (imageUrl) {
+    return <img className={className} src={toAbsoluteUrl(imageUrl)} alt="" />;
+  }
+
+  return (
+    <div className={className} style={{ background: color || colorForName(name || '') }}>
+      {getInitials(name || '')}
+    </div>
+  );
+}
+
 export default function App() {
   const [auth, setAuth] = useState(() => ({
     token: localStorage.getItem('chat:token') || '',
@@ -53,6 +67,8 @@ export default function App() {
   }));
   const [authMode, setAuthMode] = useState('login');
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
+  const [authProfileFile, setAuthProfileFile] = useState(null);
+  const [authProfilePreview, setAuthProfilePreview] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('chat:theme') === 'dark');
@@ -70,6 +86,7 @@ export default function App() {
   const activeChatRef = useRef(activeChat);
   const typingTimeoutRef = useRef(null);
   const fileInputRef = useRef(null);
+  const authProfileInputRef = useRef(null);
 
   const trimmedDraft = draft.trim();
   const currentUser = auth.user;
@@ -93,6 +110,18 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('chat:theme', darkMode ? 'dark' : 'light');
   }, [darkMode]);
+
+  useEffect(() => {
+    if (!authProfileFile) {
+      setAuthProfilePreview('');
+      return undefined;
+    }
+
+    const previewUrl = URL.createObjectURL(authProfileFile);
+    setAuthProfilePreview(previewUrl);
+
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [authProfileFile]);
 
   useEffect(() => {
     async function loadSession() {
@@ -262,18 +291,29 @@ export default function App() {
 
     try {
       const endpoint = authMode === 'signup' ? 'signup' : 'login';
-      const payload =
+      const requestOptions =
         authMode === 'signup'
-          ? authForm
+          ? (() => {
+              const formData = new FormData();
+              formData.append('name', authForm.name);
+              formData.append('email', authForm.email);
+              formData.append('password', authForm.password);
+              if (authProfileFile) {
+                formData.append('profileImage', authProfileFile);
+              }
+              return { method: 'POST', body: formData };
+            })()
           : {
-              email: authForm.email,
-              password: authForm.password
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email: authForm.email,
+                password: authForm.password
+              })
             };
 
       const response = await fetch(`${SERVER_URL}/api/auth/${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        ...requestOptions
       });
       const data = await response.json();
 
@@ -285,6 +325,7 @@ export default function App() {
       localStorage.setItem('chat:user', JSON.stringify(data.user));
       setAuth({ token: data.token, user: data.user });
       setAuthForm({ name: '', email: '', password: '' });
+      setAuthProfileFile(null);
     } catch (error) {
       setAuthError(error.message);
     } finally {
@@ -470,16 +511,32 @@ export default function App() {
 
           <form className="auth-form" onSubmit={handleAuthSubmit}>
             {authMode === 'signup' ? (
-              <label>
-                <span>Name</span>
+              <>
+                <button className="profile-upload" type="button" onClick={() => authProfileInputRef.current?.click()}>
+                  <Avatar name={authForm.name || authForm.email || 'U'} imageUrl={authProfilePreview} size="preview" />
+                  <span>
+                    <Camera size={17} />
+                    Choose profile picture
+                  </span>
+                </button>
                 <input
-                  value={authForm.name}
-                  maxLength={40}
-                  onChange={(event) => setAuthForm((current) => ({ ...current, name: event.target.value }))}
-                  placeholder="Your name"
-                  required
+                  ref={authProfileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => setAuthProfileFile(event.target.files?.[0] || null)}
+                  hidden
                 />
-              </label>
+                <label>
+                  <span>Name</span>
+                  <input
+                    value={authForm.name}
+                    maxLength={40}
+                    onChange={(event) => setAuthForm((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="Your name"
+                    required
+                  />
+                </label>
+              </>
             ) : null}
             <label>
               <span>Email</span>
@@ -514,6 +571,7 @@ export default function App() {
             onClick={() => {
               setAuthMode((current) => (current === 'signup' ? 'login' : 'signup'));
               setAuthError('');
+              setAuthProfileFile(null);
             }}
           >
             {authMode === 'signup' ? 'Already have an account? Log in' : 'Need an account? Sign up'}
@@ -534,7 +592,7 @@ export default function App() {
             <div>
               <h1>{activeTitle}</h1>
               <p>
-                {activeSubtitle} · {onlineUsers.length} {onlineUsers.length === 1 ? 'user' : 'users'} online
+                {activeSubtitle} - {onlineUsers.length} {onlineUsers.length === 1 ? 'user' : 'users'} online
               </p>
             </div>
           </div>
@@ -558,9 +616,7 @@ export default function App() {
 
         <div className="profile-row">
           <div className="profile-card">
-            <div className="avatar small" style={{ background: colorForName(currentUser.email) }}>
-              {getInitials(currentUser.name)}
-            </div>
+            <Avatar name={currentUser.name} imageUrl={currentUser.profileImageUrl} color={colorForName(currentUser.email)} size="small" />
             <div>
               <strong>{currentUser.name}</strong>
               <span>{currentUser.email}</span>
@@ -605,9 +661,7 @@ export default function App() {
                       type="button"
                       onClick={() => handleDirectSelect(user)}
                     >
-                      <div className="avatar tiny" style={{ background: user.color }}>
-                        {getInitials(user.username)}
-                      </div>
+                      <Avatar name={user.username} imageUrl={user.profileImageUrl} color={user.color} size="tiny" />
                       <span>{user.username}</span>
                     </button>
                   ))}
@@ -640,15 +694,12 @@ export default function App() {
                 }
 
                 const mine = message.userId === currentUser.id;
-                const initials = getInitials(message.username);
                 const avatarColor = message.color || colorForName(message.username);
 
                 return (
                   <article className={mine ? 'message-row mine' : 'message-row'} key={message.id}>
                     {!mine ? (
-                      <div className="avatar" style={{ background: avatarColor }}>
-                        {initials}
-                      </div>
+                      <Avatar name={message.username} imageUrl={message.profileImageUrl} color={avatarColor} />
                     ) : null}
                     <div className={mine ? 'message-bubble mine' : 'message-bubble'}>
                       <div className="message-meta">
@@ -667,9 +718,7 @@ export default function App() {
                       )}
                     </div>
                     {mine ? (
-                      <div className="avatar mine" style={{ background: avatarColor }}>
-                        {initials}
-                      </div>
+                      <Avatar name={message.username} imageUrl={message.profileImageUrl || currentUser.profileImageUrl} color={avatarColor} size="mine" />
                     ) : null}
                   </article>
                 );
@@ -692,9 +741,7 @@ export default function App() {
                   onClick={() => handleDirectSelect(user)}
                   disabled={user.id === currentUser.id}
                 >
-                  <div className="avatar small" style={{ background: user.color }}>
-                    {getInitials(user.username)}
-                  </div>
+                  <Avatar name={user.username} imageUrl={user.profileImageUrl} color={user.color} size="small" />
                   <div>
                     <strong>{user.id === currentUser.id ? 'You' : user.username}</strong>
                     <span>{user.roomId ? `In ${rooms.find((room) => room.id === user.roomId)?.name || user.roomId}` : 'Online'}</span>
