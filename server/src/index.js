@@ -14,7 +14,7 @@ import { ensureDefaultRooms, getRooms, roomExists } from './roomStore.js';
 import { authenticateRequest, verifyToken } from './auth.js';
 
 const PORT = process.env.PORT || 5000;
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:5173";
 const USER_COLORS = [
   '#0f8f83',
   '#4667c7',
@@ -88,7 +88,10 @@ const io = new Server(server, {
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 app.set('trust proxy', 1);
-app.use(cors({ origin: CLIENT_ORIGIN }));
+app.use(cors({
+  origin: CLIENT_ORIGIN,
+  credentials: true
+}));
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 
